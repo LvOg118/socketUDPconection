@@ -17,7 +17,7 @@ int main(int argc, char *argv[ ]){
     char* nomeArquivo = argv[3]; // Recebe o nome do arquivo
     int tamBuffer = atoi(argv[4]); // Recebe o tamanho do buffer
     FILE *file; 
-    int clientSocket, numDadosSocket; // Variáveis de controle da conexão
+    int clientSocket, numDadosSocket, len; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0;
     double taxa;
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
@@ -41,7 +41,6 @@ int main(int argc, char *argv[ ]){
 	for (int i=0; i < strlen(nomeArquivo); i++){ // Coloca o nome do arquivo no buffer
 		buffer[i] = nomeArquivo[i];
 	}
-	numDadosSocket = write(clientSocket, buffer, strlen(nomeArquivo)); // Escreve a mensagem no socket
 	numDadosSocket = sendto(clientSocket, buffer, strlen(nomeArquivo), MSG_CONFIRM, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr));
 	if (numDadosSocket < 0){
 		printf("[!] Escrita no socket não pôde ser realizada \n");
@@ -50,7 +49,7 @@ int main(int argc, char *argv[ ]){
     printf("[+] Requisição de arquivo enviada \n");
     file = fopen("saida.txt", "w"); // Abre o arquivo de escrita;
     printf("[+] Recebendo dados \n");
-    numDadosSocket = read(clientSocket, buffer, tamBuffer); // lê e armazena o número de dados lidos no socket
+    numDadosSocket = recvfrom(clientSocket, buffer, tamBuffer, MSG_WAITALL, (struct sockaddr *) &servidorAddr, &len);
     if (numDadosSocket < 0){
     	printf("[!] Erro na leitura do socket\n");
     	exit (1);
@@ -58,7 +57,7 @@ int main(int argc, char *argv[ ]){
     while( numDadosSocket > 0 ){
         fwrite(buffer , 1 , numDadosSocket , file); // passa do buffer para o arquivo de saída
         TotalBytes += numDadosSocket;
-        numDadosSocket = read(clientSocket, buffer, tamBuffer);
+        numDadosSocket = recvfrom(clientSocket, buffer, tamBuffer, MSG_WAITALL, (struct sockaddr *) &servidorAddr, &len);
     }
     printf("[+] Dados recebidos \n");
     fclose(file);
