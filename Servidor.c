@@ -15,7 +15,7 @@ int main(int argc, char *argv[ ]){
     int portaServidor = atoi(argv[1]); // Recebe a porta de entrada do servidor
     int tamBuffer = atoi(argv[2]); // Recebe o tamanho do buffer
     FILE* file;
-    int socketFD, newSocket, numDadosSocket, cAddrSize, deltaTime = 0; // Variáveis de controle da conexão
+    int socketFD, numDadosSocket, deltaTime = 0, len; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
     char* nomeArquivo = (char*) malloc(tamBuffer * sizeof(char));
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
@@ -30,7 +30,7 @@ int main(int argc, char *argv[ ]){
 
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
-	socketFD = socket(PF_INET, SOCK_STREAM, 0);	// Cria um socket para o servidor
+	socketFD = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um socket para o servidor
 	if (socketFD < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
@@ -42,17 +42,7 @@ int main(int argc, char *argv[ ]){
 	}
 	printf("[+] Bind criado à porta %d \n", portaServidor);
 	
-	listen(socketFD, 5); // Permite que o processo perceba conexões no socket
-	printf("[+] Aguardando conexão ... \n");
-    
-    cAddrSize = sizeof(clienteAddr); // Tamanho do endereço do cliente 
-    newSocket = accept(socketFD, (struct sockaddr *) &clienteAddr, &cAddrSize); // Inicia o processo quando uma conexão é iniciada
-    if (newSocket < 0){
-		printf("[!] Erro ao aceitar conexão \n");
-    	exit (1);
-	}
-    printf("[+] Conexão iniciada \n");
-    numDadosSocket = read(newSocket, buffer, tamBuffer); // lê e armazena a quantidade de dados do socket
+    numDadosSocket = recvfrom(socketFD, buffer, tamBuffer, MSG_WAITALL, ( struct sockaddr *) &clienteAddr, &len); 
     if (numDadosSocket < 0){
 		printf("[!] Erro ao ler socket \n");
     	exit (1);
@@ -65,12 +55,13 @@ int main(int argc, char *argv[ ]){
     if (file == NULL){
     	printf("[!] Arquivo não encontrado \n");
     	close(socketFD);
-    	close(newSocket);
     	exit (1);
     }
+    printf (" %s", nomeArquivo);
     numDadosArquivo = fread (buffer, 1, tamBuffer, file); // lê e armazena o numero de caracteres lidos no arquivo
     while (numDadosArquivo > 0){
-    	numDadosSocket = write(newSocket, buffer, numDadosArquivo); // escreve e armazena o numero de dados escritos no socket
+        printf ("uai  %u", clienteAddr.sin_addr.s_addr);
+    	numDadosSocket = sendto(socketFD, buffer, numDadosArquivo, MSG_CONFIRM, (const struct sockaddr *) &clienteAddr, len); 
     	if (numDadosSocket < 0){
 			printf("[!] Erro ao escrever no socket \n");
     		exit (1);
@@ -81,7 +72,6 @@ int main(int argc, char *argv[ ]){
     printf("[+] Arquivo enviado \n");
     fclose(file);
     close(socketFD);
-    close(newSocket);
     printf("[+] Socket fechado \n");
     gettimeofday(&timeEnd, NULL);
     timersub(&timeEnd, &timeInit, &timeDelta);
