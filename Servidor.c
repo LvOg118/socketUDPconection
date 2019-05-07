@@ -6,6 +6,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <netdb.h>
+#include <arpa/inet.h> 
+#include <unistd.h>
 
 int main(int argc, char *argv[ ]){
 	if (argc < 3){
@@ -15,7 +17,7 @@ int main(int argc, char *argv[ ]){
     int portaServidor = atoi(argv[1]); // Recebe a porta de entrada do servidor
     int tamBuffer = atoi(argv[2]); // Recebe o tamanho do buffer
     FILE* file;
-    int socketFD, numDadosSocket, deltaTime = 0, len; // Variáveis de controle da conexão
+    int serverSocket, numDadosSocket, deltaTime = 0, len; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
     char* nomeArquivo = (char*) malloc(tamBuffer * sizeof(char));
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
@@ -30,19 +32,20 @@ int main(int argc, char *argv[ ]){
 
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
-	socketFD = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um socket para o servidor
-	if (socketFD < 0){
+	serverSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);	// Cria um socket para o servidor
+	if (serverSocket < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
 	}
 	printf("[+] Socket criado \n");
-	if (bind(socketFD, (struct sockaddr*) &servidorAddr, sizeof(servidorAddr)) < 0){ // "Linka" o socket a um endereço
+	if (bind(serverSocket, (struct sockaddr*) &servidorAddr, sizeof(servidorAddr)) < 0){ // "Linka" o socket a um endereço
 		printf("[!] Bind não pôde ser realizado \n");
     	exit (1);
 	}
 	printf("[+] Bind criado à porta %d \n", portaServidor);
 	
-    numDadosSocket = recvfrom(socketFD, buffer, tamBuffer, MSG_WAITALL, ( struct sockaddr *) &clienteAddr, &len); 
+    numDadosSocket = recvfrom(serverSocket, buffer, tamBuffer, 0, ( struct sockaddr *) &clienteAddr, &len);
+    printf("[+] Recebendo dados do dominio %s, porta %d, endereco %s\n",(clienteAddr.sin_family == PF_INET?"AF_INET":"UNKNOWN"),ntohs(clienteAddr.sin_port),inet_ntoa(clienteAddr.sin_addr));
     if (numDadosSocket < 0){
 		printf("[!] Erro ao ler socket \n");
     	exit (1);
@@ -54,15 +57,14 @@ int main(int argc, char *argv[ ]){
     file = fopen(nomeArquivo, "r"); // Abre o arquivo
     if (file == NULL){
     	printf("[!] Arquivo não encontrado \n");
-    	close(socketFD);
+    	close(serverSocket);
     	exit (1);
     }
-    printf (" %s", nomeArquivo);
+
     numDadosArquivo = fread (buffer, 1, tamBuffer, file); // lê e armazena o numero de caracteres lidos no arquivo
     while (numDadosArquivo > 0){
-        printf ("uai  %u", clienteAddr.sin_addr.s_addr);
-    	numDadosSocket = sendto(socketFD, buffer, numDadosArquivo, MSG_CONFIRM, (const struct sockaddr *) &clienteAddr, len); 
-    	if (numDadosSocket < 0){
+    	numDadosSocket = sendto(serverSocket, buffer, numDadosArquivo, MSG_CONFIRM, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+        if (numDadosSocket < 0){
 			printf("[!] Erro ao escrever no socket \n");
     		exit (1);
 		}
@@ -71,7 +73,7 @@ int main(int argc, char *argv[ ]){
     }
     printf("[+] Arquivo enviado \n");
     fclose(file);
-    close(socketFD);
+    close(serverSocket);
     printf("[+] Socket fechado \n");
     gettimeofday(&timeEnd, NULL);
     timersub(&timeEnd, &timeInit, &timeDelta);

@@ -6,6 +6,8 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <netdb.h>
+#include <arpa/inet.h> 
+#include <unistd.h>
 
 int main(int argc, char *argv[ ]){
     if (argc != 5){
@@ -27,12 +29,12 @@ int main(int argc, char *argv[ ]){
 	struct sockaddr_in servidorAddr; // Estrutura existente em netinet/in.h que contém um endereço de internet
 
 	servidorAddr.sin_family = AF_INET; // Família do endrereço
-	servidorAddr.sin_port = htons(portaServidor); // Porta de entrada do servidor na ordem de bytes de rede /// ATE AQUI OK //////////////////////////////////////////////////////////////////////////////////////
+	servidorAddr.sin_port = htons(portaServidor); // Porta de entrada do servidor na ordem de bytes de rede
 	servidorAddr.sin_addr.s_addr = inet_addr(hostServidor); // Converte o endereço de IP,  para um endereço válido
 
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
-	clientSocket = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um novo socket
+	clientSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);	// Cria um novo socket
 	if (clientSocket < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
@@ -41,7 +43,7 @@ int main(int argc, char *argv[ ]){
 	for (int i=0; i < strlen(nomeArquivo); i++){ // Coloca o nome do arquivo no buffer
 		buffer[i] = nomeArquivo[i];
 	}
-	numDadosSocket = sendto(clientSocket, buffer, strlen(nomeArquivo), MSG_CONFIRM, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr));
+	numDadosSocket = sendto(clientSocket, buffer, strlen(nomeArquivo), 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr));
 	if (numDadosSocket < 0){
 		printf("[!] Escrita no socket não pôde ser realizada \n");
     	exit (1);
