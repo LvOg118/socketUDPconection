@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h> 
 #include <errno.h>
+#include <unistd.h>
 
 typedef struct pacote{
     char numSeq;
@@ -14,20 +15,17 @@ typedef struct pacote{
     char* dados;
 }pkg;
 
-void serialize(char* b, pkg p, int t){
+void serialize(char* b, pkg* p, int t){
     if (t == 0){
-        b[0] = p.numSeq;
-        b[1] = p.ack;
-        for (i=0; i<strlen(p.dados); i++){
-            b[i + 2] = p.dados[i];
+        b[0] = p->numSeq;
+        b[1] = p->ack;
+        for (int i=0; i<strlen(p->dados); i++){
+            b[i + 2] = p->dados[i];
         }
     }
     if (t == 1){
-        p.numSeq = b[0];
-        p.ack = b[1];
-        for (i=0; i<strlen(p.dados); i++){
-            p.dados[i] = b[i+2];
-        }
+        p->numSeq = b[0];
+        p->ack = b[1];
     }
 }
 
@@ -42,7 +40,7 @@ int main(int argc, char *argv[ ]){
     int serverSocket, numDadosSocket, deltaTime = 0; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
     socklen_t size;
-    int idPkg = 0, ackRec = 1, temp; // variaveis de controle para a transferencia confiável
+    char idPkg = '0', ackRec = '1', temp; // variaveis de controle para a transferencia confiável
     pkg pkgEnv;
     pkg pkgRec;
     pkgEnv.dados = (char*)malloc((tamBuffer - 2) * sizeof(char));
@@ -91,51 +89,52 @@ int main(int argc, char *argv[ ]){
     	close(serverSocket);
     	exit (1);
     }
-    numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // lê e armazena o numero de caracteres lidos no arquivo
 
         /* --------------------------------------------------
             Enviar arquivo (pode haver perda de dados aqui) 
         -----------------------------------------------------*/
 
+	numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // lê e armazena o numero de caracteres lidos no arquivo
     timer.tv_sec = 1; 
     timer.tv_usec = 0;
     setsockopt(serverSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval)); // temporizador de 1 sec
     printf("[+] Enviando dados ao dominio %s, porta %d, endereco %s\n",(clienteAddr.sin_family == AF_INET?"AF_INET":"UNKNOWN"),ntohs(clienteAddr.sin_port),inet_ntoa(clienteAddr.sin_addr));
     pkgEnv.numSeq = idPkg;
     pkgEnv.ack = ackRec;
-    serialize(buffer, pkgEnv, 0);
-    numDadosSocket = sendto(serverSocket, buffer, tamBuffer, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+    serialize(buffer, &pkgEnv, 0);
+    numDadosSocket = sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
     if (numDadosSocket < 0){
 		printf("[!] Erro ao escrever no socket \n");
         printf ("%s", strerror(errno));
     	exit (1);
 	}
-    while (numDadosArquivo > 0){
+    while (1){
         numDadosSocket = recv(serverSocket, buffer, tamBuffer, 0);
+        serialize(buffer, &pkgRec, 1);
         if (errno == EAGAIN){
-            numDadosSocket = sendto(serverSocket, buffer, tamBuffer, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
-            if (numDadosSocket < 0){
-			    printf("[!] Erro ao escrever no socket \n");
-                printf ("%s", strerror(errno));
-    		    exit (1);
-		    }
+        	errno = 0;
+        	printf("%s\n", "CUUUUUUUUUUUU");
+            sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
         }
-        else if (pkgRec.numSeq == ackRec && pkgRec.ack == idPkg){
+        //printf("id recebido = %c, idPkg = %c, ack recebido = %c, ackRec = %c\n", pkgRec.numSeq, idPkg, pkgRec.ack, ackRec);
+        if (pkgRec.numSeq == ackRec && pkgRec.ack == idPkg){
+        	//printf("OKKK");
             temp = idPkg;
             idPkg = ackRec;
             ackRec = temp;
             pkgEnv.numSeq = idPkg;
             pkgEnv.ack = ackRec;
-            serialize(buffer, pkgEnv, 0);
             TotalBytes += numDadosArquivo;
             numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file);
-            serialize(buffer, pkgEnv, 0);
-            numDadosSocket = sendto(serverSocket, buffer, tamBuffer, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
-            if (numDadosSocket < 0){
-			    printf("[!] Erro ao escrever no socket \n");
-                printf ("%s", strerror(errno));
-    		    exit (1);
-		    }
+            serialize(buffer, &pkgEnv, 0);
+            if (numDadosArquivo > 0){
+            	//printf("%u, ", numDadosArquivo + 2);
+            	sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+        	}
+        	else if (numDadosArquivo == 0){
+        		sendto(serverSocket, "xx", 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+        		break;
+        	}
         }
     }
 
