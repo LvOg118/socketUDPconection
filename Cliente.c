@@ -5,9 +5,13 @@
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/time.h>
-#include <netdb.h>
 #include <arpa/inet.h> 
-#include <unistd.h>
+
+typedef struct pacote{
+    int numSeq;
+    int ack;
+    char dados[1024];
+}pkg;
 
 int main(int argc, char *argv[ ]){
     if (argc != 5){
@@ -19,13 +23,18 @@ int main(int argc, char *argv[ ]){
     char* nomeArquivo = argv[3]; // Recebe o nome do arquivo
     int tamBuffer = atoi(argv[4]); // Recebe o tamanho do buffer
     FILE *file; 
-    int clientSocket, numDadosSocket, len; // Variáveis de controle da conexão
+    int clientSocket, numDadosSocket; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0;
     double taxa;
+    socklen_t size;
+    int idPkg = 0, ackRec = 1;
+    pkg pkgEnv;
+    pkg pkgRec;
+    //pkgRec.dados = (char*) malloc(tamBuffer * sizeof(char));
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
     printf("[+] Buffer de tamanho %i Criado \n", tamBuffer);
 
-	struct timeval timeInit, timeEnd, timeDelta; // Estruturas de tempo
+	struct timeval timeInit, timeEnd, timeDelta, timer; // Estruturas de tempo
 	struct sockaddr_in servidorAddr; // Estrutura existente em netinet/in.h que contém um endereço de internet
 
 	servidorAddr.sin_family = AF_INET; // Família do endrereço
@@ -34,7 +43,7 @@ int main(int argc, char *argv[ ]){
 
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
-	clientSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);	// Cria um novo socket
+	clientSocket = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um novo socket
 	if (clientSocket < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
@@ -51,16 +60,30 @@ int main(int argc, char *argv[ ]){
     printf("[+] Requisição de arquivo enviada \n");
     file = fopen("saida.txt", "w"); // Abre o arquivo de escrita;
     printf("[+] Recebendo dados \n");
-    numDadosSocket = recvfrom(clientSocket, buffer, tamBuffer, MSG_WAITALL, (struct sockaddr *) &servidorAddr, &len);
-    if (numDadosSocket < 0){
-    	printf("[!] Erro na leitura do socket\n");
-    	exit (1);
-    }
-    while( numDadosSocket > 0 ){
-        fwrite(buffer , 1 , numDadosSocket , file); // passa do buffer para o arquivo de saída
-        TotalBytes += numDadosSocket;
-        numDadosSocket = recvfrom(clientSocket, buffer, tamBuffer, MSG_WAITALL, (struct sockaddr *) &servidorAddr, &len);
-    }
+
+    timer.tv_sec = 1;  /* 1 tv_sec Timeout */
+    timer.tv_usec = 0;
+    setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval));
+
+    /* OK até aqui */
+    do {
+    	numDadosSocket = recv(clientSocket, &pkgRec, sizeof (pkgRec), 0);
+    	//printf("%i\n", strlen(pkgRec.dados));
+    	if (numDadosSocket < 0){
+    		printf("[!] Erro na leitura do socket\n");
+    		exit (1);
+    	}
+    	if (pkgRec.numSeq == idPkg && pkgRec.ack == 1){
+    		TotalBytes += numDadosSocket;
+    		strcpy(buffer, pkgRec.dados);
+    		printf("%i\n", numDadosSocket);
+    		fwrite(buffer , 1 , numDadosSocket - 8 , file); // passa do buffer para o arquivo de saída
+    		idPkg ++;
+    	}
+    	pkgEnv.numSeq = 0;
+        pkgEnv.ack = idPkg;
+    	numDadosSocket = sendto(clientSocket, &pkgEnv, sizeof(pkgEnv), 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
+    } while (numDadosSocket > 0);
     printf("[+] Dados recebidos \n");
     fclose(file);
     close(clientSocket);
