@@ -84,9 +84,9 @@ int main(int argc, char *argv[ ]){
         /* --------------------------------------------------
             Enviar arquivo (pode haver perda de dados aqui) 
         -----------------------------------------------------*/
-
+    size = sizeof(servidorAddr);
     do {
-    	numDadosSocket = recv(clientSocket, buffer, tamBuffer , 0);
+    	numDadosSocket = recvfrom(clientSocket, buffer, tamBuffer , 0, (struct sockaddr *) &servidorAddr, &size);
         if (numDadosSocket < 0){
     		printf("[!] Erro na leitura do socket\n");
     		exit (1);
@@ -117,7 +117,7 @@ int main(int argc, char *argv[ ]){
             break;
         }
         else if (pkgRec.numSeq != idPkg || pkgRec.ack != ackRec){
-            //printf("hehe");
+            printf("deu algum trem errado");
             sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
         }
     } while (1);

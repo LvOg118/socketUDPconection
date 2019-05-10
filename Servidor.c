@@ -109,11 +109,11 @@ int main(int argc, char *argv[ ]){
     	exit (1);
 	}
     while (1){
-        numDadosSocket = recv(serverSocket, buffer, tamBuffer, 0);
+        numDadosSocket = recvfrom(serverSocket, buffer, tamBuffer, 0, (struct sockaddr *) &clienteAddr, &size);
         serialize(buffer, &pkgRec, 1);
         if (errno == EAGAIN){
         	errno = 0;
-        	printf("%s\n", "CUUUUUUUUUUUU");
+        	printf("Pacote perdido !!!\n");
             sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
         }
         //printf("id recebido = %c, idPkg = %c, ack recebido = %c, ackRec = %c\n", pkgRec.numSeq, idPkg, pkgRec.ack, ackRec);
@@ -135,6 +135,9 @@ int main(int argc, char *argv[ ]){
         		sendto(serverSocket, "xx", 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
         		break;
         	}
+        }
+        else{
+        	printf("Deu algo errado!");
         }
     }
 
