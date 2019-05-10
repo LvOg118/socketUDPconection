@@ -22,9 +22,8 @@ void serialize(char* b, pkg* p, int t){
     if (t == 1){
         p->numSeq = b[0];
         p->ack = b[1];
-        for (int i=0; i<(strlen(b) - 2); i++){
-            p->dados[i] = b[i+2];
-        }
+        b = b + 2;
+        strcpy(p->dados, b);
     }
 }
 
@@ -117,7 +116,7 @@ int main(int argc, char *argv[ ]){
             break;
         }
         else if (pkgRec.numSeq != idPkg || pkgRec.ack != ackRec){
-            printf("deu algum trem errado");
+            //printf("deu algum trem errado");
             sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
         }
     } while (1);

@@ -17,11 +17,11 @@ typedef struct pacote{
 
 void serialize(char* b, pkg* p, int t){
     if (t == 0){
+        b = b + 2;
+        strcpy(b, p->dados);
+        b = b - 2;
         b[0] = p->numSeq;
         b[1] = p->ack;
-        for (int i=0; i<strlen(p->dados); i++){
-            b[i + 2] = p->dados[i];
-        }
     }
     if (t == 1){
         p->numSeq = b[0];
@@ -112,7 +112,7 @@ int main(int argc, char *argv[ ]){
         numDadosSocket = recvfrom(serverSocket, buffer, tamBuffer, 0, (struct sockaddr *) &clienteAddr, &size);
         serialize(buffer, &pkgRec, 1);
         if (errno == EAGAIN){
-        	errno = 0;
+        	//errno = 0;
         	printf("Pacote perdido !!!\n");
             sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
         }
@@ -135,7 +135,7 @@ int main(int argc, char *argv[ ]){
         		sendto(serverSocket, "xx", 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
         		break;
         	}
-        }
+        }	
         else{
         	printf("Deu algo errado!");
         }
