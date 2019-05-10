@@ -137,4 +137,5 @@ int main(int argc, char *argv[ ]){
     printf("--> Buffer = %5u byte(s), %10.2f kbps (%u bytes em %3u.%06u s) \n", tamBuffer, taxa, TotalBytes, (unsigned int)timeDelta.tv_sec, (unsigned int)timeDelta.tv_usec);
     printf("-------------------------------------------- \n");
     free(buffer);
+    free(pkgRec.dados);
 }
