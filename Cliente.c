@@ -8,10 +8,27 @@
 #include <arpa/inet.h> 
 
 typedef struct pacote{
-    int numSeq;
-    int ack;
-    char dados[1024];
+    char numSeq;
+    char ack;
+    char* dados;
 }pkg;
+
+void serialize(char* b, pkg p, int t){
+    if (t == 0){
+        b[0] = p.numSeq;
+        b[1] = p.ack;
+        for (i=0; i<strlen(p.dados); i++){
+            b[i + 2] = p.dados[i];
+        }
+    }
+    if (t == 1){
+        p.numSeq = b[0];
+        p.ack = b[1];
+        for (i=0; i<strlen(p.dados); i++){
+            p.dados[i] = b[i+2];
+        }
+    }
+}
 
 int main(int argc, char *argv[ ]){
     if (argc != 5){
@@ -27,10 +44,10 @@ int main(int argc, char *argv[ ]){
     unsigned int TotalBytes = 0;
     double taxa;
     socklen_t size;
-    int idPkg = 0, ackRec = 1;
+    int idPkg = 0, ackRec = 1, temp;
     pkg pkgEnv;
     pkg pkgRec;
-    //pkgRec.dados = (char*) malloc(tamBuffer * sizeof(char));
+    pkgRec.dados = (char*) malloc((tamBuffer - 2) * sizeof(char)); // Aloca um tamanho para dados do pacote
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
     printf("[+] Buffer de tamanho %i Criado \n", tamBuffer);
 
@@ -61,29 +78,37 @@ int main(int argc, char *argv[ ]){
     file = fopen("saida.txt", "w"); // Abre o arquivo de escrita;
     printf("[+] Recebendo dados \n");
 
-    timer.tv_sec = 1;  /* 1 tv_sec Timeout */
-    timer.tv_usec = 0;
-    setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval));
+    //timer.tv_sec = 1;  /* 1 tv_sec Timeout */
+    //timer.tv_usec = 0;
+    //setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval));
 
     /* OK até aqui */
     do {
-    	numDadosSocket = recv(clientSocket, &pkgRec, sizeof (pkgRec), 0);
-    	//printf("%i\n", strlen(pkgRec.dados));
-    	if (numDadosSocket < 0){
+    	numDadosSocket = recv(clientSocket, buffer, tamBuffer , 0);
+        if (numDadosSocket < 0){
     		printf("[!] Erro na leitura do socket\n");
     		exit (1);
     	}
-    	if (pkgRec.numSeq == idPkg && pkgRec.ack == 1){
+    	printf("%s\n", buffer);
+        serialize (buffer, pkgRec, 1);
+        printf("%c, %c, %s\n", pkgRec.numSeq, pkgRec.ack, pkgRec.dados);
+    	if (pkgRec.numSeq == ackRec && (pkgRec.ack == idPkg){
     		TotalBytes += numDadosSocket;
-    		strcpy(buffer, pkgRec.dados);
     		printf("%i\n", numDadosSocket);
-    		fwrite(buffer , 1 , numDadosSocket - 8 , file); // passa do buffer para o arquivo de saída
-    		idPkg ++;
+    		fwrite(pkgRec.dados , 1 , numDadosSocket - 2 , file); // passa do buffer para o arquivo de saída
+            temp = idPkg;
+            idPkg = ackRec;
+            ackRec = temp;
+            pkgEnv.numSeq = idPkg; 
+            pkgEnv.ack = ackRec;
+            serialize (buffer, pkgRec, 0);
+    	    numDadosSocket = sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
     	}
-    	pkgEnv.numSeq = 0;
-        pkgEnv.ack = idPkg;
-    	numDadosSocket = sendto(clientSocket, &pkgEnv, sizeof(pkgEnv), 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
+        else{
+    	    numDadosSocket = sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
+        }
     } while (numDadosSocket > 0);
+    
     printf("[+] Dados recebidos \n");
     fclose(file);
     close(clientSocket);

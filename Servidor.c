@@ -9,10 +9,27 @@
 #include <errno.h>
 
 typedef struct pacote{
-    int numSeq;
-    int ack;
-    char dados[1024];
-} pkg;
+    char numSeq;
+    char ack;
+    char* dados;
+}pkg;
+
+void serialize(char* b, pkg p, int t){
+    if (t == 0){
+        b[0] = p.numSeq;
+        b[1] = p.ack;
+        for (i=0; i<strlen(p.dados); i++){
+            b[i + 2] = p.dados[i];
+        }
+    }
+    if (t == 1){
+        p.numSeq = b[0];
+        p.ack = b[1];
+        for (i=0; i<strlen(p.dados); i++){
+            p.dados[i] = b[i+2];
+        }
+    }
+}
 
 int main(int argc, char *argv[ ]){
 	if (argc < 3){
@@ -25,10 +42,10 @@ int main(int argc, char *argv[ ]){
     int serverSocket, numDadosSocket, deltaTime = 0; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
     socklen_t size;
-    int idPkg = 0, ackRec = 1;
+    int idPkg = 0, ackRec = 1, temp;
     pkg pkgEnv;
     pkg pkgRec;
-    //pkgEnv.dados = (char*)malloc(tamBuffer * sizeof(char));
+    pkgEnv.dados = (char*)malloc((tamBuffer - 2) * sizeof(char));
     char* nomeArquivo = (char*) malloc(tamBuffer * sizeof(char));
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
     printf("[+] Buffer de tamanho %d Criado \n", tamBuffer);
@@ -70,33 +87,49 @@ int main(int argc, char *argv[ ]){
     	exit (1);
     }
 
-    numDadosArquivo = fread (buffer, 1, tamBuffer, file); // lê e armazena o numero de caracteres lidos no arquivo
+    numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // lê e armazena o numero de caracteres lidos no arquivo
     printf("[+] Enviando dados ao dominio %s, porta %d, endereco %s\n",(clienteAddr.sin_family == AF_INET?"AF_INET":"UNKNOWN"),ntohs(clienteAddr.sin_port),inet_ntoa(clienteAddr.sin_addr));
-    strcpy(pkgEnv.dados, buffer);
     
     /* até aqui ok */ 
     timer.tv_sec = 1;  /* 1 tv_sec Timeout */
     timer.tv_usec = 0;
     setsockopt(serverSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval));
 
+    pkgEnv.numSeq = idPkg;
+    pkgEnv.ack = ackRec;
+    serialize(buffer, pkgEnv, 0);
+    numDadosSocket = sendto(serverSocket, buffer, tamBuffer, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+    if (numDadosSocket < 0){
+		printf("[!] Erro ao escrever no socket \n");
+        printf ("%s", strerror(errno));
+    	exit (1);
+	}
     while (numDadosArquivo > 0){
-        pkgEnv.numSeq = idPkg;
-        pkgEnv.ack = ackRec;
-    	numDadosSocket = sendto(serverSocket, &pkgEnv, sizeof(pkgEnv), 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
-        if (numDadosSocket < 0){
-			printf("[!] Erro ao escrever no socket \n");
-            printf ("%s", strerror(errno));
-    		exit (1);
-		}
-        numDadosSocket = recv(serverSocket, &pkgRec, sizeof (pkgRec), 0);
+        numDadosSocket = recv(serverSocket, buffer, tamBuffer, 0);
         if (errno == EAGAIN){
-            continue;
+            numDadosSocket = sendto(serverSocket, buffer, tamBuffer, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+            if (numDadosSocket < 0){
+			    printf("[!] Erro ao escrever no socket \n");
+                printf ("%s", strerror(errno));
+    		    exit (1);
+		    }
         }
-        if (pkgRec.numSeq == 0 && pkgRec.ack == idPkg){
-            idPkg++;
+        else if (pkgRec.numSeq == ackRec && pkgRec.ack == idPkg){
+            temp = idPkg;
+            idPkg = ackRec;
+            ackRec = temp;
+            pkgEnv.numSeq = idPkg;
+            pkgEnv.ack = ackRec;
+            serialize(buffer, pkgEnv, 0);
             TotalBytes += numDadosArquivo;
-            numDadosArquivo = fread (buffer, 1, tamBuffer, file);
-            strcpy(pkgEnv.dados, buffer);
+            numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file);
+            serialize(buffer, pkgEnv, 0);
+            numDadosSocket = sendto(serverSocket, buffer, tamBuffer, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+            if (numDadosSocket < 0){
+			    printf("[!] Erro ao escrever no socket \n");
+                printf ("%s", strerror(errno));
+    		    exit (1);
+		    }
         }
     }
 
