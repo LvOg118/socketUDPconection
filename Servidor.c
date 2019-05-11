@@ -42,7 +42,7 @@ int main(int argc, char *argv[ ]){
     int serverSocket, numDadosSocket, deltaTime = 0; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
     socklen_t size;
-    int idPkg = 0, ackRec = 1, temp;
+    int idPkg = 0, ackRec = 1, temp; // variaveis de controle para a transferencia confiável
     pkg pkgEnv;
     pkg pkgRec;
     pkgEnv.dados = (char*)malloc((tamBuffer - 2) * sizeof(char));
@@ -50,7 +50,7 @@ int main(int argc, char *argv[ ]){
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
     printf("[+] Buffer de tamanho %d Criado \n", tamBuffer);
 
-	struct timeval timeInit, timeEnd, timeDelta, timer;
+	struct timeval timeInit, timeEnd, timeDelta, timer; // estruturas de tempo
 	struct sockaddr_in servidorAddr, clienteAddr; // Estrutura existente em netinet/in.h que contém um endereço de internet
 
 	servidorAddr.sin_family = AF_INET; // Família do endrereço
@@ -59,17 +59,22 @@ int main(int argc, char *argv[ ]){
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
 	serverSocket = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um socket para o servidor
-
 	if (serverSocket < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
 	}
 	printf("[+] Socket criado \n");
+
 	if (bind(serverSocket, (struct sockaddr*) &servidorAddr, sizeof(servidorAddr)) < 0){ // "Linka" o socket a um endereço
 		printf("[!] Bind não pôde ser realizado \n");
     	exit (1);
 	}
 	printf("[+] Bind criado à porta %d \n", portaServidor);
+
+        /* --------------------------------------------------
+        Receber o nome do arquivo (não há perda de dados aqui) 
+        -----------------------------------------------------*/
+
     size = sizeof(clienteAddr);
     numDadosSocket = recvfrom(serverSocket, buffer, tamBuffer, 0, (struct sockaddr*) &clienteAddr, &size);
     if (numDadosSocket < 0){
@@ -86,15 +91,16 @@ int main(int argc, char *argv[ ]){
     	close(serverSocket);
     	exit (1);
     }
-
     numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // lê e armazena o numero de caracteres lidos no arquivo
-    printf("[+] Enviando dados ao dominio %s, porta %d, endereco %s\n",(clienteAddr.sin_family == AF_INET?"AF_INET":"UNKNOWN"),ntohs(clienteAddr.sin_port),inet_ntoa(clienteAddr.sin_addr));
-    
-    /* até aqui ok */ 
-    timer.tv_sec = 1;  /* 1 tv_sec Timeout */
-    timer.tv_usec = 0;
-    setsockopt(serverSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval));
 
+        /* --------------------------------------------------
+            Enviar arquivo (pode haver perda de dados aqui) 
+        -----------------------------------------------------*/
+
+    timer.tv_sec = 1; 
+    timer.tv_usec = 0;
+    setsockopt(serverSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval)); // temporizador de 1 sec
+    printf("[+] Enviando dados ao dominio %s, porta %d, endereco %s\n",(clienteAddr.sin_family == AF_INET?"AF_INET":"UNKNOWN"),ntohs(clienteAddr.sin_port),inet_ntoa(clienteAddr.sin_addr));
     pkgEnv.numSeq = idPkg;
     pkgEnv.ack = ackRec;
     serialize(buffer, pkgEnv, 0);
@@ -133,6 +139,10 @@ int main(int argc, char *argv[ ]){
         }
     }
 
+         /* --------------------------------------------------
+                             Escrita de dados 
+         -----------------------------------------------------*/   
+
     printf("[+] Arquivo enviado \n");
     fclose(file);
     close(serverSocket);
@@ -145,4 +155,6 @@ int main(int argc, char *argv[ ]){
     printf("--> Total de bytes enviados: %i \n", TotalBytes);
     printf("-------------------------------------------- \n");
     free(buffer);
+    free(nomeArquivo);
+    free(pkgEnv.dados);
 }

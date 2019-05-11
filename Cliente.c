@@ -66,6 +66,11 @@ int main(int argc, char *argv[ ]){
     	exit (1);
 	}
 	printf("[+] Socket criado \n");
+
+        /* --------------------------------------------------
+         Envia o nome do arquivo (não há perda de dados aqui) 
+        -----------------------------------------------------*/
+
 	for (int i=0; i < strlen(nomeArquivo); i++){ // Coloca o nome do arquivo no buffer
 		buffer[i] = nomeArquivo[i];
 	}
@@ -78,11 +83,10 @@ int main(int argc, char *argv[ ]){
     file = fopen("saida.txt", "w"); // Abre o arquivo de escrita;
     printf("[+] Recebendo dados \n");
 
-    //timer.tv_sec = 1;  /* 1 tv_sec Timeout */
-    //timer.tv_usec = 0;
-    //setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval));
+        /* --------------------------------------------------
+            Enviar arquivo (pode haver perda de dados aqui) 
+        -----------------------------------------------------*/
 
-    /* OK até aqui */
     do {
     	numDadosSocket = recv(clientSocket, buffer, tamBuffer , 0);
         if (numDadosSocket < 0){
@@ -108,7 +112,11 @@ int main(int argc, char *argv[ ]){
     	    numDadosSocket = sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
         }
     } while (numDadosSocket > 0);
-    
+
+         /* --------------------------------------------------
+                             Escrita de dados 
+         -----------------------------------------------------*/ 
+
     printf("[+] Dados recebidos \n");
     fclose(file);
     close(clientSocket);
