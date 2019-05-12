@@ -8,6 +8,7 @@
 #include <arpa/inet.h> 
 #include <errno.h>
 #include <unistd.h>
+#include "tp_socket.h"
 
 typedef struct pacote{
     char numSeq;
@@ -39,42 +40,32 @@ int main(int argc, char *argv[ ]){
     FILE* file;
     int serverSocket, numDadosSocket, deltaTime = 0; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
-    socklen_t size;
     char idPkg = '0', ackRec = '1', temp; // variaveis de controle para a transferencia confiável
     pkg pkgEnv;
     pkg pkgRec;
+    tp_init();
     pkgEnv.dados = (char*)malloc((tamBuffer - 2) * sizeof(char));
     char* nomeArquivo = (char*) malloc(tamBuffer * sizeof(char));
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
     printf("[+] Buffer de tamanho %d Criado \n", tamBuffer);
 
 	struct timeval timeInit, timeEnd, timeDelta, timer; // estruturas de tempo
-	struct sockaddr_in servidorAddr, clienteAddr; // Estrutura existente em netinet/in.h que contém um endereço de internet
+	struct sockaddr_in clienteAddr; // Estrutura existente em netinet/in.h que contém um endereço de internet
 
-	servidorAddr.sin_family = AF_INET; // Família do endrereço
-	servidorAddr.sin_port = htons(portaServidor); // Porta de entrada do servidor na ordem de bytes de rede
-	servidorAddr.sin_addr.s_addr = INADDR_ANY ; // Endereço IP da maquina servidor
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
-	serverSocket = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um socket para o servidor
+	serverSocket = tp_socket((unsigned short) portaServidor);	// Cria um socket para o servidor
 	if (serverSocket < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
 	}
 	printf("[+] Socket criado \n");
 
-	if (bind(serverSocket, (struct sockaddr*) &servidorAddr, sizeof(servidorAddr)) < 0){ // "Linka" o socket a um endereço
-		printf("[!] Bind não pôde ser realizado \n");
-    	exit (1);
-	}
-	printf("[+] Bind criado à porta %d \n", portaServidor);
-
         /* --------------------------------------------------
         Receber o nome do arquivo (não há perda de dados aqui) 
         -----------------------------------------------------*/
 
-    size = sizeof(clienteAddr);
-    numDadosSocket = recvfrom(serverSocket, buffer, tamBuffer, 0, (struct sockaddr*) &clienteAddr, &size);
+    numDadosSocket = tp_recvfrom(serverSocket, buffer, tamBuffer, &clienteAddr);
     if (numDadosSocket < 0){
 		printf("[!] Erro ao ler socket \n");
     	exit (1);
@@ -102,19 +93,19 @@ int main(int argc, char *argv[ ]){
     pkgEnv.numSeq = idPkg;
     pkgEnv.ack = ackRec;
     serialize(buffer, &pkgEnv, 0);
-    numDadosSocket = sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+    numDadosSocket = tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); 
     if (numDadosSocket < 0){
 		printf("[!] Erro ao escrever no socket \n");
         printf ("%s", strerror(errno));
     	exit (1);
 	}
     while (1){
-        numDadosSocket = recvfrom(serverSocket, buffer, tamBuffer, 0, (struct sockaddr *) &clienteAddr, &size);
+        numDadosSocket = tp_recvfrom(serverSocket, buffer, tamBuffer, &clienteAddr);
         serialize(buffer, &pkgRec, 1);
         if (errno == EAGAIN){
         	//errno = 0;
         	printf("Pacote perdido !!!\n");
-            sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+            tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); 
         }
         //printf("id recebido = %c, idPkg = %c, ack recebido = %c, ackRec = %c\n", pkgRec.numSeq, idPkg, pkgRec.ack, ackRec);
         if (pkgRec.numSeq == ackRec && pkgRec.ack == idPkg){
@@ -129,10 +120,10 @@ int main(int argc, char *argv[ ]){
             serialize(buffer, &pkgEnv, 0);
             if (numDadosArquivo > 0){
             	//printf("%u, ", numDadosArquivo + 2);
-            	sendto(serverSocket, buffer, numDadosArquivo + 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+            	tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); 
         	}
         	else if (numDadosArquivo == 0){
-        		sendto(serverSocket, "xx", 2, 0, (const struct sockaddr *) &clienteAddr, sizeof(clienteAddr)); 
+        		tp_sendto(serverSocket, "xx", 2, &clienteAddr, sizeof(clienteAddr));  // envia pacote de fechamento
         		break;
         	}
         }	

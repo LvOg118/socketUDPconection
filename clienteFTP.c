@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include "tp_socket.h"
 
 typedef struct pacote{
     char numSeq;
@@ -40,10 +41,10 @@ int main(int argc, char *argv[ ]){
     int clientSocket, numDadosSocket; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0;
     double taxa;
-    socklen_t size;
     char idPkg = '0', ackRec = '1', temp;
     pkg pkgEnv;
     pkg pkgRec;
+    tp_init();
     pkgRec.dados = (char*) malloc((tamBuffer - 2) * sizeof(char)); // Aloca um tamanho para dados do pacote
     char* buffer = (char*) malloc(tamBuffer * sizeof(char)); // Cria um buffer de tamanho tamBuffer
     printf("[+] Buffer de tamanho %i Criado \n", tamBuffer);
@@ -51,13 +52,13 @@ int main(int argc, char *argv[ ]){
 	struct timeval timeInit, timeEnd, timeDelta, timer; // Estruturas de tempo
 	struct sockaddr_in servidorAddr; // Estrutura existente em netinet/in.h que contém um endereço de internet
 
-	servidorAddr.sin_family = AF_INET; // Família do endrereço
-	servidorAddr.sin_port = htons(portaServidor); // Porta de entrada do servidor na ordem de bytes de rede
-	servidorAddr.sin_addr.s_addr = inet_addr(hostServidor); // Converte o endereço de IP,  para um endereço válido
+	if(tp_build_addr(&servidorAddr, hostServidor, portaServidor) == -1){ // criar estrutura de endereço
+        Error("[!] Falha ao criar endereçamento do servidor \n");
+    }
 
 	gettimeofday(&timeInit, NULL); // Recebe o valor do tempo atual
 
-	clientSocket = socket(AF_INET, SOCK_DGRAM, 0);	// Cria um novo socket
+	clientSocket = tp_socket(0);	// Cria um novo socket
 	if (clientSocket < 0){
 		printf("[!] Socket não pôde ser criado \n");
     	exit (1);
@@ -71,7 +72,7 @@ int main(int argc, char *argv[ ]){
 	for (int i=0; i < strlen(nomeArquivo); i++){ // Coloca o nome do arquivo no buffer
 		buffer[i] = nomeArquivo[i];
 	}
-	numDadosSocket = sendto(clientSocket, buffer, strlen(nomeArquivo), 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr));
+	numDadosSocket = tp_sendto(clientSocket, buffer, strlen(nomeArquivo), servidorAddr);
 	if (numDadosSocket < 0){
 		printf("[!] Escrita no socket não pôde ser realizada \n");
     	exit (1);
@@ -83,9 +84,8 @@ int main(int argc, char *argv[ ]){
         /* --------------------------------------------------
             Enviar arquivo (pode haver perda de dados aqui) 
         -----------------------------------------------------*/
-    size = sizeof(servidorAddr);
     do {
-    	numDadosSocket = recvfrom(clientSocket, buffer, tamBuffer , 0, (struct sockaddr *) &servidorAddr, &size);
+    	numDadosSocket = tp_recvfrom(clientSocket, buffer, tamBuffer , &servidorAddr);
         if (numDadosSocket < 0){
     		printf("[!] Erro na leitura do socket\n");
     		exit (1);
@@ -110,14 +110,14 @@ int main(int argc, char *argv[ ]){
             //printf("ack env = %c, id env = %c\n", pkgEnv.ack, pkgEnv.numSeq);
             serialize (buffer, &pkgEnv, 0);
             //printf("mano");
-    	    sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
+    	    tp_sendto(clientSocket, buffer, 2, &servidorAddr); 
     	}
-        else if (pkgRec.numSeq == 'x' || pkgRec.ack == 'x'){
+        else if (pkgRec.numSeq == 'x' && pkgRec.ack == 'x'){
             break;
         }
         else if (pkgRec.numSeq != idPkg || pkgRec.ack != ackRec){
             //printf("deu algum trem errado");
-            sendto(clientSocket, buffer, 2, 0, (const struct sockaddr *) &servidorAddr, sizeof(servidorAddr)); 
+            tp_sendto(clientSocket, buffer, 2, &servidorAddr); 
         }
     } while (1);
 
