@@ -5,18 +5,18 @@
 #include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/time.h>
-#include <arpa/inet.h> 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <unistd.h>
-#include "tp_socket.h"
+#include "tp_socket.c"
 
-typedef struct pacote{
+typedef struct pacote{ // "pacote que trafega pelo UDP"
     char numSeq;
     char ack;
     char* dados;
 }pkg;
 
-void serialize(char* b, pkg* p, int t){
+void serialize(char* b, pkg* p, int t){ // transforma a estrutura pacote em um vetor e vice-versa
     if (t == 0){
         b = b + 2;
         strcpy(b, p->dados);
@@ -41,8 +41,8 @@ int main(int argc, char *argv[ ]){
     int serverSocket, numDadosSocket, deltaTime = 0; // Variáveis de controle da conexão
     unsigned int TotalBytes = 0, numDadosArquivo;
     char idPkg = '0', ackRec = '1', temp; // variaveis de controle para a transferencia confiável
-    pkg pkgEnv;
-    pkg pkgRec;
+    pkg pkgEnv; // pacote que é enviado
+    pkg pkgRec; // pacote que é recebido
     tp_init();
     pkgEnv.dados = (char*)malloc((tamBuffer - 2) * sizeof(char));
     char* nomeArquivo = (char*) malloc(tamBuffer * sizeof(char));
@@ -62,10 +62,10 @@ int main(int argc, char *argv[ ]){
 	printf("[+] Socket criado \n");
 
         /* --------------------------------------------------
-        Receber o nome do arquivo (não há perda de dados aqui) 
+        Receber o nome do arquivo (não há perda de dados aqui)
         -----------------------------------------------------*/
 
-    numDadosSocket = tp_recvfrom(serverSocket, buffer, tamBuffer, &clienteAddr);
+    numDadosSocket = tp_recvfrom(serverSocket, buffer, tamBuffer, &clienteAddr); // recebe o nome
     if (numDadosSocket < 0){
 		printf("[!] Erro ao ler socket \n");
     	exit (1);
@@ -82,59 +82,57 @@ int main(int argc, char *argv[ ]){
     }
 
         /* --------------------------------------------------
-            Enviar arquivo (pode haver perda de dados aqui) 
+            Enviar arquivo (pode haver perda de dados aqui)
         -----------------------------------------------------*/
 
-	numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // lê e armazena o numero de caracteres lidos no arquivo
-    timer.tv_sec = 1; 
+	numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // lê certo numero de dados e poe no pacote
+    timer.tv_sec = 1;
     timer.tv_usec = 0;
     setsockopt(serverSocket, SOL_SOCKET, SO_RCVTIMEO,(struct timeval *)&timer, sizeof(struct timeval)); // temporizador de 1 sec
     printf("[+] Enviando dados ao dominio %s, porta %d, endereco %s\n",(clienteAddr.sin_family == AF_INET?"AF_INET":"UNKNOWN"),ntohs(clienteAddr.sin_port),inet_ntoa(clienteAddr.sin_addr));
-    pkgEnv.numSeq = idPkg;
+    pkgEnv.numSeq = idPkg; // seta o primeiro numeros de sequencia e ack
     pkgEnv.ack = ackRec;
-    serialize(buffer, &pkgEnv, 0);
-    numDadosSocket = tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); 
+    serialize(buffer, &pkgEnv, 0); // serializa o pacote
+    numDadosSocket = tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); // envia o primeiro pacote
     if (numDadosSocket < 0){
 		printf("[!] Erro ao escrever no socket \n");
         printf ("%s", strerror(errno));
     	exit (1);
 	}
     while (1){
-        numDadosSocket = tp_recvfrom(serverSocket, buffer, tamBuffer, &clienteAddr);
-        serialize(buffer, &pkgRec, 1);
-        if (errno == EAGAIN){
-        	//errno = 0;
-        	printf("Pacote perdido !!!\n");
-            tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); 
+        numDadosSocket = tp_recvfrom(serverSocket, buffer, tamBuffer, &clienteAddr); // espera a confirmação do cliente
+        serialize(buffer, &pkgRec, 1); // deserializa a resposta
+        if (errno == EAGAIN){ // caso não receba nenhuma temporização em 1 segundo
+        	errno = 0;
+        	printf("Pacote perdido! Reenviando último pacote ...\n");
+            serialize(buffer, &pkgEnv, 0);
+            tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); // reenvia ultimo pacote
         }
-        //printf("id recebido = %c, idPkg = %c, ack recebido = %c, ackRec = %c\n", pkgRec.numSeq, idPkg, pkgRec.ack, ackRec);
-        if (pkgRec.numSeq == ackRec && pkgRec.ack == idPkg){
-        	//printf("OKKK");
-            temp = idPkg;
+        else if (pkgRec.numSeq == ackRec && pkgRec.ack == idPkg){ // caso receba uma resposta como o esperado
+            temp = idPkg; // altera as variaveis de estado
             idPkg = ackRec;
             ackRec = temp;
             pkgEnv.numSeq = idPkg;
             pkgEnv.ack = ackRec;
             TotalBytes += numDadosArquivo;
-            numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file);
-            serialize(buffer, &pkgEnv, 0);
-            if (numDadosArquivo > 0){
-            	//printf("%u, ", numDadosArquivo + 2);
-            	tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr); 
+            numDadosArquivo = fread (pkgEnv.dados, 1, tamBuffer - 2, file); // remonta o pacote
+            serialize(buffer, &pkgEnv, 0); // serializa o pacote
+            if (numDadosArquivo > 0){          	
+            	tp_sendto(serverSocket, buffer, numDadosArquivo + 2, &clienteAddr);
         	}
-        	else if (numDadosArquivo == 0){
-        		tp_sendto(serverSocket, "xx", 2, &clienteAddr, sizeof(clienteAddr));  // envia pacote de fechamento
+        	else if (numDadosArquivo == 0){ // caso queira encerrar a conexão
+        		tp_sendto(serverSocket, "xx", 2, &clienteAddr);  // envia pacote de fechamento
         		break;
         	}
-        }	
+        }
         else{
-        	printf("Deu algo errado!");
+        	printf("Alguma coisa deu errado!\n"); // geralmente esse caso nunca ocorre
         }
     }
 
          /* --------------------------------------------------
-                             Escrita de dados 
-         -----------------------------------------------------*/   
+                             Escrita de dados
+         -----------------------------------------------------*/
 
     printf("[+] Arquivo enviado \n");
     fclose(file);
